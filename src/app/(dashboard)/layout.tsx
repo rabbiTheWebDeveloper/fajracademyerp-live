@@ -35,6 +35,7 @@ import {
   Users2,
   Crown,
   Mail,
+  Link2,
 } from "lucide-react";
 import { ThemeProvider } from "@/context/ThemeContext";
 import { PermissionProvider } from "@/context/PermissionContext";
