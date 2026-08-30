@@ -1,0 +1,14 @@
+allowBuilds:
+  '@google/genai': true
+  '@sentry/cli': true
+  '@tailwindcss/oxide': true
+  core-js: true
+  protobufjs: true
+  re2: true
+  sharp: true
+  unrs-resolver: true
+
+overrides:
+  postcss: ^8.5.10
+  gaxios>uuid: ^11.1.1
+  '@opentelemetry/core': ^2.8.0

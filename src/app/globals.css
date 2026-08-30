@@ -1,0 +1,412 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* ── Standard Tailwind Palette (restored) ── */
+  --color-blue-50: #eff6ff;
+  --color-blue-100: #dbeafe;
+  --color-blue-200: #bfdbfe;
+  --color-blue-300: #93c5fd;
+  --color-blue-400: #60a5fa;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-blue-800: #1e40af;
+  --color-blue-900: #1e3a8a;
+  --color-blue-950: #0f172a;
+
+  --color-indigo-50: #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-200: #c7d2fe;
+  --color-indigo-300: #a5b4fc;
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;
+  --color-indigo-700: #4338ca;
+  --color-indigo-800: #3730a3;
+  --color-indigo-900: #312e81;
+  --color-indigo-950: #0f172a;
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   CINEMATIC PREMIUM DARK MODE — FAJR ACADEMY ERP
+   Deep Obsidian · Dark Navy · Subtle Gold · Dramatic Atmosphere
+   ════════════════════════════════════════════════════════════════════════════ */
+
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* ── Canvas & Body ── */
+html.dark body {
+  background-color: #04070f;
+  background-image:
+    radial-gradient(ellipse 80% 40% at 50% 0%, rgba(30, 58, 138, 0.08) 0%, transparent 60%),
+    radial-gradient(ellipse 60% 30% at 0% 100%, rgba(180, 130, 30, 0.03) 0%, transparent 50%);
+  color: #e8edf5;
+}
+
+/* ── Root Canvas ── */
+html.dark .bg-gray-50,
+html.dark .bg-slate-50 {
+  background-color: #04070f !important;
+}
+
+html.dark .bg-gray-50\/50,
+html.dark .bg-gray-50\/40,
+html.dark .bg-gray-50\/60,
+html.dark .bg-gray-50\/75 {
+  background-color: rgba(8, 14, 28, 0.75) !important;
+}
+
+/* ── Card / Panel Surfaces ── */
+html.dark .bg-white {
+  background-color: #080d1a !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 1px 3px rgba(0, 0, 0, 0.4),
+    0 4px 24px rgba(0, 0, 0, 0.25) !important;
+}
+
+/* ── Secondary Containers ── */
+html.dark .bg-gray-100,
+html.dark .bg-slate-100 {
+  background-color: #0e1628 !important;
+}
+
+html.dark .bg-gray-200,
+html.dark .bg-slate-200 {
+  background-color: #151f38 !important;
+}
+
+html.dark .bg-slate-800\/30,
+html.dark .bg-slate-800\/40,
+html.dark .bg-slate-800\/80 {
+  background-color: rgba(8, 14, 28, 0.6) !important;
+}
+
+/* ── Interactive Hover States (Cinematic Illumination) ── */
+html.dark .hover\:bg-gray-50:hover,
+html.dark .hover\:bg-gray-100:hover,
+html.dark .hover\:bg-slate-50:hover,
+html.dark .hover\:bg-slate-100:hover {
+  background-color: #101827 !important;
+  transition: background-color 0.18s ease;
+}
+
+html.dark .hover\:bg-blue-50:hover {
+  background-color: rgba(30, 64, 175, 0.2) !important;
+}
+
+html.dark .hover\:bg-red-50:hover,
+html.dark .hover\:bg-rose-50:hover {
+  background-color: rgba(153, 27, 27, 0.2) !important;
+}
+
+/* ── Cinematic Border System (luminous hairlines) ── */
+html.dark .border-gray-100,
+html.dark .border-gray-200,
+html.dark .border-gray-300,
+html.dark .border-slate-100,
+html.dark .border-slate-200,
+html.dark .border-slate-700,
+html.dark .border-slate-800 {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+html.dark .divide-gray-100> :not([hidden])~ :not([hidden]),
+html.dark .divide-gray-200> :not([hidden])~ :not([hidden]),
+html.dark .divide-slate-100> :not([hidden])~ :not([hidden]) {
+  border-color: rgba(255, 255, 255, 0.07) !important;
+}
+
+/* ── Premium Typography Contrast ── */
+html.dark .text-gray-900,
+html.dark .text-slate-900,
+html.dark .text-black {
+  color: #eef2f8 !important;
+}
+
+html.dark .text-gray-800,
+html.dark .text-gray-700,
+html.dark .text-slate-800,
+html.dark .text-slate-700 {
+  color: #d1dae8 !important;
+}
+
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-slate-600,
+html.dark .text-slate-500 {
+  color: #7e9ab8 !important;
+}
+
+html.dark .text-gray-400,
+html.dark .text-slate-400 {
+  color: #4d6680 !important;
+}
+
+/* ── Form Controls (Premium Black Inputs) ── */
+html.dark input:not([type="checkbox"]):not([type="radio"]),
+html.dark select,
+html.dark textarea {
+  background-color: #05080f !important;
+  color: #eef2f8 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.6) !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #3d5470 !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: rgba(185, 150, 40, 0.6) !important;
+  box-shadow:
+    inset 0 1px 3px rgba(0, 0, 0, 0.6),
+    0 0 0 2px rgba(180, 140, 30, 0.18),
+    0 0 12px rgba(180, 140, 30, 0.08) !important;
+  outline: none !important;
+}
+
+html.dark select option,
+.dark-select option {
+  background-color: #080d1a !important;
+  color: #eef2f8 !important;
+}
+
+/* ── Premium Data Tables ── */
+html.dark table thead {
+  background-color: #050910 !important;
+}
+
+html.dark table thead th {
+  color: #7e9ab8 !important;
+  border-color: rgba(255, 255, 255, 0.07) !important;
+  letter-spacing: 0.04em;
+}
+
+html.dark table tbody tr {
+  border-color: rgba(255, 255, 255, 0.05) !important;
+  transition: background-color 0.15s ease;
+}
+
+html.dark table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.035) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ── Gold-Accented Status Badges ── */
+
+/* Emerald — Active / Success */
+html.dark .bg-emerald-50,
+html.dark .bg-emerald-50\/50,
+html.dark .bg-emerald-50\/60,
+html.dark .bg-emerald-100 {
+  background-color: rgba(5, 46, 22, 0.65) !important;
+  border-color: rgba(52, 211, 153, 0.2) !important;
+}
+
+html.dark .text-emerald-700,
+html.dark .text-emerald-800,
+html.dark .text-emerald-600 {
+  color: #3dd48e !important;
+}
+
+/* Blue — Info / Primary */
+html.dark .bg-blue-50,
+html.dark .bg-blue-50\/50,
+html.dark .bg-blue-50\/60,
+html.dark .bg-blue-100 {
+  background-color: rgba(12, 25, 65, 0.7) !important;
+  border-color: rgba(96, 165, 250, 0.18) !important;
+}
+
+html.dark .text-blue-700,
+html.dark .text-blue-800,
+html.dark .text-blue-600 {
+  color: #5eb0ff !important;
+}
+
+/* Amber / Gold — Warning / Pending */
+html.dark .bg-amber-50,
+html.dark .bg-amber-50\/50,
+html.dark .bg-amber-50\/60,
+html.dark .bg-amber-100,
+html.dark .bg-yellow-50 {
+  background-color: rgba(60, 35, 0, 0.7) !important;
+  border-color: rgba(200, 155, 20, 0.25) !important;
+}
+
+html.dark .text-amber-700,
+html.dark .text-amber-800,
+html.dark .text-amber-600,
+html.dark .text-yellow-700 {
+  color: #e0a91c !important;
+  text-shadow: 0 0 12px rgba(220, 170, 20, 0.3);
+}
+
+/* Rose — Danger / Rejected */
+html.dark .bg-red-50,
+html.dark .bg-red-50\/30,
+html.dark .bg-red-100,
+html.dark .bg-rose-50,
+html.dark .bg-rose-100 {
+  background-color: rgba(60, 5, 20, 0.65) !important;
+  border-color: rgba(251, 113, 133, 0.2) !important;
+}
+
+html.dark .text-red-700,
+html.dark .text-red-600,
+html.dark .text-rose-700,
+html.dark .text-rose-600 {
+  color: #f87090 !important;
+}
+
+/* Violet — Revenue / Premium */
+html.dark .bg-violet-50,
+html.dark .bg-violet-100,
+html.dark .bg-purple-50,
+html.dark .bg-purple-100,
+html.dark .bg-indigo-50,
+html.dark .bg-indigo-100 {
+  background-color: rgba(30, 8, 60, 0.65) !important;
+  border-color: rgba(167, 139, 250, 0.2) !important;
+}
+
+html.dark .text-violet-700,
+html.dark .text-violet-600,
+html.dark .text-purple-700,
+html.dark .text-purple-600,
+html.dark .text-indigo-700,
+html.dark .text-indigo-600 {
+  color: #b195ff !important;
+}
+
+/* ── Cinematic Shadows & Modals ── */
+html.dark .shadow-xl,
+html.dark .shadow-2xl,
+html.dark .shadow-lg {
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.6),
+    0 10px 40px -4px rgba(0, 0, 0, 0.7),
+    0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+}
+
+html.dark .bg-white.rounded-2xl,
+html.dark .bg-white.rounded-xl,
+html.dark .bg-white.rounded-lg {
+  background-color: #080d1a !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 25px 60px -10px rgba(0, 0, 0, 0.9),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ── Scrollbar (Cinematic Thin Track) ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(150, 160, 180, 0.3) transparent;
+}
+
+html.dark * {
+  scrollbar-color: rgba(80, 100, 140, 0.4) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(150, 160, 180, 0.35);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(180, 140, 30, 0.55);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: #b8960a;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: rgba(60, 85, 130, 0.45);
+}
+
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(185, 148, 20, 0.65);
+}
+
+html.dark ::-webkit-scrollbar-thumb:active {
+  background: #c9a418;
+}
+
+/* ── React Phone Input ── */
+.react-phone-wrapper .PhoneInput {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.react-phone-wrapper .PhoneInputCountry {
+  margin-right: 0.5rem;
+  padding-left: 1rem;
+}
+
+.react-phone-wrapper .PhoneInputInput {
+  flex: 1;
+  min-width: 0;
+  outline: none !important;
+  background: transparent;
+  padding: 0.625rem 1rem 0.625rem 0;
+  border: none !important;
+}
+
+.react-phone-wrapper .PhoneInputInput:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* ── Utility: Hide Scrollbars ── */
+.scrollbar-none,
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Cinematic Glow Utility ── */
+html.dark .glow-gold {
+  box-shadow: 0 0 20px rgba(185, 148, 20, 0.25), 0 0 60px rgba(185, 148, 20, 0.1);
+}
+
+html.dark .glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2), 0 0 60px rgba(59, 130, 246, 0.08);
+}
+
+html.dark .border-gold {
+  border-color: rgba(185, 148, 20, 0.45) !important;
+}
+
+html.dark .text-gold {
+  color: #d4a017 !important;
+  text-shadow: 0 0 16px rgba(212, 160, 23, 0.4);
+}

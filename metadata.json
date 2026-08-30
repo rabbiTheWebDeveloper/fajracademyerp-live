@@ -1,0 +1,8 @@
+{
+  "name": "EdTech Ops Dashboard",
+  "description": "EdTech Operations Manager Dashboard with student, teacher, course, and finance management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
