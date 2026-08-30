@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -10,12 +11,11 @@ import {
   VideoPresets,
   Track,
   LocalTrackPublication,
-  LocalVideoTrack,
-  LocalAudioTrack,
   RemoteParticipant,
   RemoteTrackPublication,
   Participant,
   ConnectionState,
+  ConnectionQuality,
 } from "livekit-client";
 import {
   Mic,
@@ -30,7 +30,6 @@ import {
   Settings,
   Maximize2,
   Minimize2,
-  Sparkles,
   Loader2,
   Send,
   X,
@@ -38,23 +37,29 @@ import {
   CheckCircle2,
   Clock,
   Shield,
-  Volume2,
   VolumeX,
   Radio,
-  ChevronDown,
   LayoutGrid,
-  Square,
   Palette,
-  Eye,
   Hand,
   Crown,
   Share2,
   Check,
   UserMinus,
   Search,
-  Pin,
+  Zap,
 } from "lucide-react";
-import WhiteboardCanvas from "./WhiteboardCanvas";
+
+// Lazy-load the heavy Whiteboard Canvas component so it doesn't block initial classroom load
+const WhiteboardCanvas = dynamic(() => import("./WhiteboardCanvas"), {
+  ssr: false,
+  loading: () => (
+    <div className="w-full h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
+      <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      <span className="text-xs font-semibold">Loading interactive whiteboard...</span>
+    </div>
+  ),
+});
 
 interface LiveKitClassroomProps {
   classId: string;
@@ -71,196 +76,267 @@ interface ChatMessage {
 
 type StageMode = "grid" | "spotlight" | "screen" | "whiteboard";
 
-// ─── Participant Video Tile Subcomponent ─────────────────────────────────────
-function ParticipantTile({
-  participant,
-  isLocal = false,
-  isSpotlight = false,
-  onSpotlight,
-}: {
-  participant: Participant;
-  isLocal?: boolean;
-  isSpotlight?: boolean;
-  onSpotlight?: () => void;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [videoTrack, setVideoTrack] = useState<Track | null>(null);
-  const [audioTrack, setAudioTrack] = useState<Track | null>(null);
-  const [isSpeaking, setIsSpeaking] = useState(participant.isSpeaking);
-  const [isMuted, setIsMuted] = useState(!participant.isMicrophoneEnabled);
-  const [isVideoEnabled, setIsVideoEnabled] = useState(participant.isCameraEnabled);
-
-  // Sync track subscriptions
-  useEffect(() => {
-    let mounted = true;
-
-    const updateTracks = () => {
-      if (!mounted) return;
-      try {
-        // Find camera video track
-        const cameraPub = participant.getTrackPublication(Track.Source.Camera);
-        setVideoTrack(cameraPub?.track || null);
-        setIsVideoEnabled(Boolean(cameraPub && !cameraPub.isMuted && cameraPub.track));
-
-        // Find microphone audio track
-        const micPub = participant.getTrackPublication(Track.Source.Microphone);
-        setAudioTrack(micPub?.track || null);
-        setIsMuted(Boolean(!micPub || micPub.isMuted));
-      } catch (err) {
-        console.warn("ParticipantTile updateTracks notice:", err);
-      }
-    };
-
-    updateTracks();
-
-    const handleTrackSubscribed = () => updateTracks();
-    const handleTrackUnsubscribed = () => updateTracks();
-    const handleMuted = () => updateTracks();
-    const handleUnmuted = () => updateTracks();
-    const handleSpeakingChanged = (speaking: boolean) => {
-      if (mounted) setIsSpeaking(speaking);
-    };
-
-    participant.on(ParticipantEvent.TrackSubscribed, handleTrackSubscribed);
-    participant.on(ParticipantEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-    participant.on(ParticipantEvent.TrackMuted, handleMuted);
-    participant.on(ParticipantEvent.TrackUnmuted, handleUnmuted);
-    participant.on(ParticipantEvent.IsSpeakingChanged, handleSpeakingChanged);
-
-    return () => {
-      mounted = false;
-      participant.off(ParticipantEvent.TrackSubscribed, handleTrackSubscribed);
-      participant.off(ParticipantEvent.TrackUnsubscribed, handleTrackUnsubscribed);
-      participant.off(ParticipantEvent.TrackMuted, handleMuted);
-      participant.off(ParticipantEvent.TrackUnmuted, handleUnmuted);
-      participant.off(ParticipantEvent.IsSpeakingChanged, handleSpeakingChanged);
-    };
-  }, [participant]);
-
-  // Attach video track to DOM element
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el || !videoTrack) return;
-
-    try {
-      videoTrack.attach(el);
-    } catch (e) {
-      console.warn("videoTrack attach notice:", e);
-    }
-
-    return () => {
-      try {
-        videoTrack.detach(el);
-      } catch (_) {}
-    };
-  }, [videoTrack]);
-
-  // Attach audio track for remote participants (avoid echo for local)
-  useEffect(() => {
-    if (isLocal) return;
-    const el = audioRef.current;
-    if (!el || !audioTrack) return;
-
-    try {
-      audioTrack.attach(el);
-    } catch (e) {
-      console.warn("audioTrack attach notice:", e);
-    }
-
-    return () => {
-      try {
-        audioTrack.detach(el);
-      } catch (_) {}
-    };
-  }, [audioTrack, isLocal]);
-
-  // Metadata parsing
-  let metadata: any = {};
-  try {
-    if (participant.metadata) {
-      metadata = JSON.parse(participant.metadata);
-    }
-  } catch (_) {}
-
-  const isTeacher = metadata.userRole === "teacher" || metadata.isHost || participant.identity.startsWith("teacher_");
-  const displayName = participant.name || (isTeacher ? "Teacher" : "Student");
-
-  return (
-    <div
-      onClick={onSpotlight}
-      className={`relative bg-slate-900/90 rounded-2xl overflow-hidden border transition-all flex items-center justify-center cursor-pointer group ${
-        isSpeaking
-          ? "border-emerald-500 shadow-lg shadow-emerald-500/20 ring-2 ring-emerald-500/50"
-          : isSpotlight
-          ? "border-blue-500/80 shadow-lg shadow-blue-500/20"
-          : "border-slate-800 hover:border-slate-700"
-      } w-full h-full min-h-[160px]`}
-    >
-      {/* Video Element */}
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted={isLocal}
-        className={`w-full h-full object-cover ${isVideoEnabled ? "opacity-100" : "opacity-0 pointer-events-none"} ${
-          isLocal ? "transform -scale-x-100" : ""
-        }`}
-      />
-
-      {/* Audio element for remote audio */}
-      {!isLocal && <audio ref={audioRef} autoPlay />}
-
-      {/* Video Off Fallback Avatar */}
-      {!isVideoEnabled && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-900 to-slate-950">
-          <div
-            className={`w-16 h-16 sm:w-20 sm:h-20 rounded-2xl flex items-center justify-center text-xl sm:text-2xl font-bold text-white shadow-xl ${
-              isTeacher
-                ? "bg-gradient-to-br from-blue-600 to-indigo-700 ring-4 ring-blue-500/30"
-                : "bg-gradient-to-br from-teal-600 to-emerald-700 ring-4 ring-emerald-500/30"
-            }`}
-          >
-            {displayName.charAt(0).toUpperCase()}
-          </div>
-          <span className="mt-3 text-xs sm:text-sm font-semibold text-slate-200 truncate max-w-[80%]">
-            {displayName} {isLocal && "(You)"}
-          </span>
-          <span className="text-[10px] text-slate-400 mt-0.5">Camera is off</span>
-        </div>
-      )}
-
-      {/* Participant Badge & Status */}
-      <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
-        <div className="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-xs font-medium text-white shadow-md">
-          {isTeacher ? (
-            <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-          ) : (
-            <Shield className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
-          )}
-          <span className="truncate max-w-[120px] sm:max-w-[160px] font-semibold text-[11px] sm:text-xs">
-            {displayName} {isLocal && "(You)"}
-          </span>
-        </div>
-
-        <div className="flex items-center gap-1">
-          {/* Audio Indicator */}
-          <div
-            className={`p-1.5 rounded-lg backdrop-blur-md border ${
-              isMuted
-                ? "bg-rose-950/80 border-rose-500/40 text-rose-400"
-                : isSpeaking
-                ? "bg-emerald-950/80 border-emerald-500/40 text-emerald-400 animate-pulse"
-                : "bg-slate-950/80 border-white/10 text-slate-300"
-            }`}
-          >
-            {isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
-          </div>
-        </div>
+// ─── Lightweight Connection Quality Signal Bar (Pure CSS) ───────────────────
+function QualityIcon({ quality }: { quality?: ConnectionQuality }) {
+  if (quality === ConnectionQuality.Poor) {
+    return (
+      <div className="flex items-end gap-0.5 h-3 px-1" title="Poor Network Connection">
+        <span className="w-1 h-1.5 bg-amber-400 rounded-xs" />
+        <span className="w-1 h-2.5 bg-slate-600 rounded-xs" />
+        <span className="w-1 h-3.5 bg-slate-600 rounded-xs" />
       </div>
+    );
+  }
+  if (quality === ConnectionQuality.Lost) {
+    return (
+      <div className="flex items-end gap-0.5 h-3 px-1" title="Connection Lost / Reconnecting">
+        <span className="w-1 h-1.5 bg-rose-500 rounded-xs animate-ping" />
+        <span className="w-1 h-2.5 bg-slate-600 rounded-xs" />
+        <span className="w-1 h-3.5 bg-slate-600 rounded-xs" />
+      </div>
+    );
+  }
+  // Excellent, Good or default
+  return (
+    <div className="flex items-end gap-0.5 h-3 px-1" title="Good Connection">
+      <span className="w-1 h-1.5 bg-emerald-400 rounded-xs" />
+      <span className="w-1 h-2.5 bg-emerald-400 rounded-xs" />
+      <span className="w-1 h-3.5 bg-emerald-400 rounded-xs" />
     </div>
   );
 }
+
+// ─── Participant Video Tile (Memoized to prevent cascading re-renders) ───────
+const ParticipantTile = React.memo(
+  function ParticipantTile({
+    participant,
+    isLocal = false,
+    isSpotlight = false,
+    onSpotlight,
+    dataSaver = false,
+  }: {
+    participant: Participant;
+    isLocal?: boolean;
+    isSpotlight?: boolean;
+    onSpotlight?: () => void;
+    dataSaver?: boolean;
+  }) {
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const audioRef = useRef<HTMLAudioElement>(null);
+    const [videoTrack, setVideoTrack] = useState<Track | null>(null);
+    const [audioTrack, setAudioTrack] = useState<Track | null>(null);
+    const [isSpeaking, setIsSpeaking] = useState(participant.isSpeaking);
+    const [isMuted, setIsMuted] = useState(!participant.isMicrophoneEnabled);
+    const [isVideoEnabled, setIsVideoEnabled] = useState(participant.isCameraEnabled);
+    const [quality, setQuality] = useState<ConnectionQuality>(participant.connectionQuality);
+
+    // Sync track subscriptions & participant events
+    useEffect(() => {
+      let mounted = true;
+
+      const updateTracks = () => {
+        if (!mounted) return;
+        try {
+          const cameraPub = participant.getTrackPublication(Track.Source.Camera);
+          setVideoTrack(cameraPub?.track || null);
+          setIsVideoEnabled(Boolean(cameraPub && !cameraPub.isMuted && cameraPub.track));
+
+          const micPub = participant.getTrackPublication(Track.Source.Microphone);
+          setAudioTrack(micPub?.track || null);
+          setIsMuted(Boolean(!micPub || micPub.isMuted));
+        } catch (err) {
+          console.warn("ParticipantTile track sync notice:", err);
+        }
+      };
+
+      updateTracks();
+
+      const handleTrackSubscribed = () => updateTracks();
+      const handleTrackUnsubscribed = () => updateTracks();
+      const handleMuted = () => updateTracks();
+      const handleUnmuted = () => updateTracks();
+      const handleSpeakingChanged = (speaking: boolean) => {
+        if (mounted) setIsSpeaking(speaking);
+      };
+      const handleQualityChanged = (q: ConnectionQuality) => {
+        if (mounted) setQuality(q);
+      };
+
+      participant.on(ParticipantEvent.TrackSubscribed, handleTrackSubscribed);
+      participant.on(ParticipantEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+      participant.on(ParticipantEvent.TrackMuted, handleMuted);
+      participant.on(ParticipantEvent.TrackUnmuted, handleUnmuted);
+      participant.on(ParticipantEvent.IsSpeakingChanged, handleSpeakingChanged);
+      participant.on(ParticipantEvent.ConnectionQualityChanged, handleQualityChanged);
+
+      return () => {
+        mounted = false;
+        participant.off(ParticipantEvent.TrackSubscribed, handleTrackSubscribed);
+        participant.off(ParticipantEvent.TrackUnsubscribed, handleTrackUnsubscribed);
+        participant.off(ParticipantEvent.TrackMuted, handleMuted);
+        participant.off(ParticipantEvent.TrackUnmuted, handleUnmuted);
+        participant.off(ParticipantEvent.IsSpeakingChanged, handleSpeakingChanged);
+        participant.off(ParticipantEvent.ConnectionQualityChanged, handleQualityChanged);
+      };
+    }, [participant]);
+
+    // Data Saver: pause video stream on remote participant to prioritize audio
+    useEffect(() => {
+      if (isLocal) return;
+      try {
+        const cameraPub = participant.getTrackPublication(Track.Source.Camera) as RemoteTrackPublication | undefined;
+        if (cameraPub) {
+          cameraPub.setSubscribed(!dataSaver);
+        }
+      } catch (_) {}
+    }, [dataSaver, isLocal, participant]);
+
+    // Attach video track to DOM element safely
+    useEffect(() => {
+      const el = videoRef.current;
+      if (!el || !videoTrack || (dataSaver && !isLocal)) {
+        if (el && videoTrack) {
+          try { videoTrack.detach(el); } catch (_) {}
+        }
+        return;
+      }
+
+      try {
+        videoTrack.attach(el);
+      } catch (e) {
+        console.warn("videoTrack attach notice:", e);
+      }
+
+      return () => {
+        try {
+          videoTrack.detach(el);
+        } catch (_) {}
+      };
+    }, [videoTrack, dataSaver, isLocal]);
+
+    // Attach audio track for remote participants (avoid local echo)
+    useEffect(() => {
+      if (isLocal) return;
+      const el = audioRef.current;
+      if (!el || !audioTrack) return;
+
+      try {
+        audioTrack.attach(el);
+      } catch (e) {
+        console.warn("audioTrack attach notice:", e);
+      }
+
+      return () => {
+        try {
+          audioTrack.detach(el);
+        } catch (_) {}
+      };
+    }, [audioTrack, isLocal]);
+
+    // Metadata parsing
+    const metadata = useMemo(() => {
+      try {
+        return participant.metadata ? JSON.parse(participant.metadata) : {};
+      } catch {
+        return {};
+      }
+    }, [participant.metadata]);
+
+    const isTeacher = metadata.userRole === "teacher" || metadata.isHost || participant.identity.startsWith("teacher_");
+    const displayName = participant.name || (isTeacher ? "Teacher" : "Student");
+    const shouldShowVideo = isVideoEnabled && (!dataSaver || isLocal);
+
+    return (
+      <div
+        onClick={onSpotlight}
+        className={`relative bg-slate-900/90 rounded-2xl overflow-hidden border transition-all flex items-center justify-center cursor-pointer group ${
+          isSpeaking
+            ? "border-emerald-500 shadow-lg shadow-emerald-500/20 ring-2 ring-emerald-500/50"
+            : isSpotlight
+            ? "border-blue-500/80 shadow-lg shadow-blue-500/20"
+            : "border-slate-800 hover:border-slate-700"
+        } w-full h-full min-h-[160px]`}
+      >
+        {/* Video Element */}
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted={isLocal}
+          className={`w-full h-full object-cover ${shouldShowVideo ? "opacity-100" : "opacity-0 pointer-events-none"} ${
+            isLocal ? "transform -scale-x-100" : ""
+          }`}
+        />
+
+        {/* Remote Audio Element */}
+        {!isLocal && <audio ref={audioRef} autoPlay />}
+
+        {/* Video Off / Data Saver Fallback Avatar */}
+        {!shouldShowVideo && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-4 bg-gradient-to-br from-slate-900 to-slate-950">
+            <div
+              className={`w-14 h-14 sm:w-16 sm:h-16 rounded-2xl flex items-center justify-center text-lg sm:text-xl font-bold text-white shadow-xl ${
+                isTeacher
+                  ? "bg-gradient-to-br from-blue-600 to-indigo-700 ring-4 ring-blue-500/30"
+                  : "bg-gradient-to-br from-teal-600 to-emerald-700 ring-4 ring-emerald-500/30"
+              }`}
+            >
+              {displayName.charAt(0).toUpperCase()}
+            </div>
+            <span className="mt-2.5 text-xs sm:text-sm font-semibold text-slate-200 truncate max-w-[80%]">
+              {displayName} {isLocal && "(You)"}
+            </span>
+            <span className="text-[10px] text-slate-400 mt-0.5">
+              {dataSaver && !isLocal ? "Audio Only (Data Saver)" : "Camera is off"}
+            </span>
+          </div>
+        )}
+
+        {/* Participant Badge & Status */}
+        <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between pointer-events-none z-10">
+          <div className="flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-2.5 py-1 rounded-xl border border-white/10 text-xs font-medium text-white shadow-md">
+            {isTeacher ? (
+              <Crown className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+            ) : (
+              <Shield className="w-3.5 h-3.5 text-teal-400 flex-shrink-0" />
+            )}
+            <span className="truncate max-w-[110px] sm:max-w-[150px] font-semibold text-[11px] sm:text-xs">
+              {displayName} {isLocal && "(You)"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {/* Signal Quality Meter */}
+            <div className="p-1 rounded-lg bg-slate-950/80 backdrop-blur-md border border-white/10 flex items-center">
+              <QualityIcon quality={quality} />
+            </div>
+
+            {/* Microphone Indicator */}
+            <div
+              className={`p-1.5 rounded-lg backdrop-blur-md border ${
+                isMuted
+                  ? "bg-rose-950/80 border-rose-500/40 text-rose-400"
+                  : isSpeaking
+                  ? "bg-emerald-950/80 border-emerald-500/40 text-emerald-400 animate-pulse"
+                  : "bg-slate-950/80 border-white/10 text-slate-300"
+              }`}
+            >
+              {isMuted ? <MicOff className="w-3 h-3" /> : <Mic className="w-3 h-3" />}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  },
+  (prev, next) => {
+    return (
+      prev.participant.sid === next.participant.sid &&
+      prev.isLocal === next.isLocal &&
+      prev.isSpotlight === next.isSpotlight &&
+      prev.dataSaver === next.dataSaver
+    );
+  }
+);
 
 // ─── Main Classroom Container ────────────────────────────────────────────────
 export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomProps) {
@@ -269,10 +345,11 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
   // Connection & Room States
   const [connecting, setConnecting] = useState(true);
   const [connectionState, setConnectionState] = useState<ConnectionState>(ConnectionState.Disconnected);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const [showReconnectedPill, setShowReconnectedPill] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [room, setRoom] = useState<Room | null>(null);
-  const [attendanceId, setAttendanceId] = useState<string | null>(null);
 
   // Classroom Media Controls
   const [isAudioMuted, setIsAudioMuted] = useState(false);
@@ -280,6 +357,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
   const [isSharingScreen, setIsSharingScreen] = useState(false);
   const [screenTrack, setScreenTrack] = useState<Track | null>(null);
   const [screenSharerName, setScreenSharerName] = useState<string>("");
+  const [isDataSaver, setIsDataSaver] = useState(false);
 
   // Stage & View Modes
   const [stageMode, setStageMode] = useState<StageMode>("grid");
@@ -292,9 +370,16 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [showEndModal, setShowEndModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
   const [handRaisedUsers, setHandRaisedUsers] = useState<Set<string>>(new Set());
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Device Selection States
+  const [audioInputDevices, setAudioInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [videoInputDevices, setVideoInputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>("");
+  const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>("");
 
   // Participants & Chat
   const [remoteParticipants, setRemoteParticipants] = useState<RemoteParticipant[]>([]);
@@ -305,7 +390,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
   // Elapsed Timer
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
-  // Screen Share Video ref
+  // Refs
   const screenVideoRef = useRef<HTMLVideoElement>(null);
   const chatBottomRef = useRef<HTMLDivElement>(null);
 
@@ -350,25 +435,33 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
 
         // Step 2: Record attendance join
         try {
-          const joinRes = await fetch(`/api/online-classes/${classId}/join`, {
+          await fetch(`/api/online-classes/${classId}/join`, {
             method: "POST",
           });
-          const joinData = await joinRes.json();
-          if (joinData.success && joinData.attendance?._id && isSubscribed) {
-            setAttendanceId(joinData.attendance._id);
-          }
         } catch (attErr) {
           console.warn("Attendance join record warning:", attErr);
         }
 
         if (!isSubscribed) return;
 
-        // Step 3: Initialize LiveKit Room client
+        // Step 3: Initialize LiveKit Room client with Adaptive Stream & Dynacast
         const roomInstance = new Room({
           adaptiveStream: true,
           dynacast: true,
           videoCaptureDefaults: {
-            resolution: VideoPresets.h720.resolution,
+            resolution: VideoPresets.h540.resolution,
+          },
+          publishDefaults: {
+            simulcast: true,
+            videoSimulcastLayers: [VideoPresets.h180, VideoPresets.h360],
+            screenShareSimulcastLayers: [VideoPresets.h720],
+            stopMicTrackOnMute: false,
+            videoCodec: "vp8",
+          },
+          audioCaptureDefaults: {
+            autoGainControl: true,
+            echoCancellation: true,
+            noiseSuppression: true,
           },
         });
         currentRoom = roomInstance;
@@ -377,6 +470,18 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
         roomInstance.on(RoomEvent.ConnectionStateChanged, (state: ConnectionState) => {
           if (!isSubscribed) return;
           setConnectionState(state);
+        });
+
+        roomInstance.on(RoomEvent.Reconnecting, () => {
+          if (!isSubscribed) return;
+          setIsReconnecting(true);
+        });
+
+        roomInstance.on(RoomEvent.Reconnected, () => {
+          if (!isSubscribed) return;
+          setIsReconnecting(false);
+          setShowReconnectedPill(true);
+          setTimeout(() => setShowReconnectedPill(false), 3500);
         });
 
         roomInstance.on(RoomEvent.Disconnected, () => {
@@ -596,6 +701,14 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           console.warn("Camera/Mic initial setup notice:", mediaErr);
         }
 
+        // Query available devices for settings
+        try {
+          const audioInputs = await Room.getLocalDevices("audioinput");
+          const videoInputs = await Room.getLocalDevices("videoinput");
+          setAudioInputDevices(audioInputs);
+          setVideoInputDevices(videoInputs);
+        } catch (_) {}
+
         if (isSubscribed) {
           setRoom(roomInstance);
           setRemoteParticipants(Array.from(roomInstance.remoteParticipants.values()));
@@ -616,15 +729,25 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
       isSubscribed = false;
       if (currentRoom) {
         try {
+          // Stop all local media tracks to ensure camera/mic hardware LEDs turn off immediately
+          currentRoom.localParticipant?.trackPublications.forEach((pub) => {
+            if (pub.track) {
+              pub.track.stop();
+            }
+          });
           if (currentRoom.state !== ConnectionState.Disconnected) {
             currentRoom.disconnect().catch(() => {});
           }
         } catch (_) {}
       }
-      // Record attendance leave
-      fetch(`/api/online-classes/${classId}/leave`, {
-        method: "POST",
-      }).catch(() => {});
+      // Record attendance leave via beacon if possible or fetch
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(`/api/online-classes/${classId}/leave`);
+        } else {
+          fetch(`/api/online-classes/${classId}/leave`, { method: "POST" }).catch(() => {});
+        }
+      } catch (_) {}
     };
   }, [classId, router]);
 
@@ -679,11 +802,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
         setScreenSharerName("");
         setStageMode("grid");
       } else {
+        // Optimized screen share settings: text detail priority with low framerate to save bandwidth
         await room.localParticipant.setScreenShareEnabled(true, {
           audio: true,
           resolution: VideoPresets.h1080.resolution,
+          contentHint: "detail",
         });
-        
+
         const screenPub = room.localParticipant.getTrackPublication(Track.Source.ScreenShare);
         if (screenPub?.track) {
           setScreenTrack(screenPub.track);
@@ -711,6 +836,23 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
       setScreenSharerName("");
       setStageMode("grid");
     }
+  };
+
+  // ─── Data Saver (Low Bandwidth Mode) ───────────────────────────────────────
+  const toggleDataSaver = () => {
+    setIsDataSaver((prev) => {
+      const next = !prev;
+      if (room && room.state === ConnectionState.Connected) {
+        room.remoteParticipants.forEach((p) => {
+          p.videoTrackPublications.forEach((pub) => {
+            if (pub.source === Track.Source.Camera) {
+              pub.setSubscribed(!next);
+            }
+          });
+        });
+      }
+      return next;
+    });
   };
 
   // ─── Host Meeting Management Controls ───────────────────────────────────────
@@ -860,6 +1002,18 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
     }
   };
 
+  // ─── Device Switching ──────────────────────────────────────────────────────
+  const handleDeviceChange = async (kind: "audioinput" | "videoinput", deviceId: string) => {
+    if (!room) return;
+    try {
+      await room.switchActiveDevice(kind, deviceId);
+      if (kind === "audioinput") setSelectedAudioDevice(deviceId);
+      if (kind === "videoinput") setSelectedVideoDevice(deviceId);
+    } catch (err) {
+      console.warn(`Failed to switch ${kind} device:`, err);
+    }
+  };
+
   // ─── Leave & End Class ─────────────────────────────────────────────────────
   const handleLeaveClass = async () => {
     if (room && room.state === ConnectionState.Connected) {
@@ -875,7 +1029,6 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
   const handleEndClassForEveryone = async () => {
     try {
       if (room && room.state === ConnectionState.Connected) {
-        // Broadcast end signal
         try {
           const packet = JSON.stringify({ type: "end_class_signal" });
           await room.localParticipant.publishData(new TextEncoder().encode(packet), { reliable: true });
@@ -884,7 +1037,6 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           await room.disconnect();
         } catch (_) {}
       }
-      // Call end API
       await fetch(`/api/online-classes/${classId}/end`, { method: "POST" });
       router.push("/teacher/online-classes-liveKit");
     } catch (err) {
@@ -933,7 +1085,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
 
         <div className="mt-8 flex items-center gap-3 bg-slate-900/80 px-4 py-2 rounded-xl border border-slate-800 text-xs text-slate-400 font-mono">
           <span className="w-2 h-2 rounded-full bg-blue-400 animate-ping" />
-          wss://huuihhuoiu-dud747ko.livekit.cloud
+          <span>Low-Latency Adaptive Streaming</span>
         </div>
       </div>
     );
@@ -950,15 +1102,15 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
         <div className="mt-6 flex gap-3">
           <button
             onClick={() => window.location.reload()}
-            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold text-sm text-white transition-all"
+            className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold text-sm text-white transition-all cursor-pointer"
           >
             Retry Connection
           </button>
           <Link
-            href="/online-classes"
+            href="/teacher/online-classes-liveKit"
             className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 font-semibold text-sm text-slate-300 transition-all"
           >
-            Exit to Dashboard
+            Exit to Classes
           </Link>
         </div>
       </div>
@@ -972,8 +1124,22 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
   // Live Classroom UI
   // ───────────────────────────────────────────────────────────────────────────
   return (
-    <div className="h-screen w-screen bg-slate-950 flex flex-col overflow-hidden text-slate-100 font-sans select-none">
-      
+    <div className="h-screen w-screen bg-slate-950 flex flex-col overflow-hidden text-slate-100 font-sans select-none relative">
+      {/* ── Reconnecting / Network Warning Floating Banners ── */}
+      {isReconnecting && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-amber-500 text-slate-950 px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold animate-pulse">
+          <Loader2 className="w-4 h-4 animate-spin text-slate-950" />
+          <span>Unstable network. Reconnecting to classroom (Audio prioritized)...</span>
+        </div>
+      )}
+
+      {showReconnectedPill && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 bg-emerald-600 text-white px-4 py-2 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+          <span>Reconnected! Media stream restored.</span>
+        </div>
+      )}
+
       {/* ── Top Navigation Bar ── */}
       <header className="h-16 px-4 sm:px-6 bg-slate-900/90 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between flex-shrink-0 z-30">
         <div className="flex items-center gap-3 min-w-0">
@@ -982,7 +1148,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-sm sm:text-base font-bold text-white truncate max-w-[200px] sm:max-w-md">
+              <h1 className="text-sm sm:text-base font-bold text-white truncate max-w-[180px] sm:max-w-md">
                 {sessionInfo?.classTitle || "Live Online Class"}
               </h1>
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
@@ -1019,7 +1185,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
                 setStageMode("grid");
                 setIsWhiteboardActive(false);
               }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
                 stageMode === "grid" ? "bg-blue-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1027,7 +1193,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
             </button>
             <button
               onClick={toggleWhiteboard}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
                 isWhiteboardActive ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               }`}
             >
@@ -1047,7 +1213,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
               }
             }}
             title="Toggle Fullscreen"
-            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition-all"
+            className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/60 transition-all cursor-pointer"
           >
             {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
@@ -1056,10 +1222,8 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
 
       {/* ── Main Stage Area + Side Drawer ── */}
       <div className="flex-1 flex overflow-hidden relative">
-        
         {/* Stage Content */}
         <main className="flex-1 p-3 sm:p-4 overflow-y-auto flex flex-col justify-center items-center">
-          
           {/* 1. Whiteboard Mode */}
           {isWhiteboardActive ? (
             <div className="w-full h-full max-w-6xl max-h-[85vh] bg-slate-900 rounded-3xl overflow-hidden border border-slate-800 shadow-2xl flex flex-col">
@@ -1073,7 +1237,6 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
                 }}
               />
             </div>
-
           ) : screenTrack ? (
             /* 2. Screen Share Spotlight Mode */
             <div className="w-full h-full flex flex-col items-center justify-center relative">
@@ -1093,16 +1256,19 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
                 )}
               </div>
 
-              {/* Mini video strip below screen share */}
+              {/* Mini participant strip below screen share */}
               <div className="w-full flex items-center justify-center gap-3 overflow-x-auto py-2 px-1 max-w-4xl">
                 {allParticipants.map((p) => (
                   <div key={p.identity} className="w-36 h-24 flex-shrink-0">
-                    <ParticipantTile participant={p} isLocal={p === room.localParticipant} />
+                    <ParticipantTile
+                      participant={p}
+                      isLocal={p === room.localParticipant}
+                      dataSaver={isDataSaver}
+                    />
                   </div>
                 ))}
               </div>
             </div>
-
           ) : (
             /* 3. Grid Mode (1 to N participants responsive layout) */
             <div
@@ -1122,6 +1288,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
                   participant={p}
                   isLocal={p === room.localParticipant}
                   isSpotlight={spotlightParticipantId === p.identity}
+                  dataSaver={isDataSaver}
                   onSpotlight={() =>
                     setSpotlightParticipantId((curr) => (curr === p.identity ? null : p.identity))
                   }
@@ -1153,7 +1320,7 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
               </div>
               <button
                 onClick={() => setActiveSideDrawer(null)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1214,7 +1381,6 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
                   </button>
                 </form>
               </div>
-
             ) : (
               /* Participant List */
               <div className="flex-1 flex flex-col overflow-hidden">
@@ -1352,30 +1518,28 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
       </div>
 
       {/* ── Bottom Control Toolbar ── */}
-      <footer className="h-20 px-4 sm:px-8 bg-slate-900/95 backdrop-blur-md border-t border-slate-800/80 flex items-center justify-between flex-shrink-0 z-30">
-        
+      <footer className="h-20 px-3 sm:px-8 bg-slate-900/95 backdrop-blur-md border-t border-slate-800/80 flex items-center justify-between flex-shrink-0 z-30">
         {/* Left indicators */}
-        <div className="hidden sm:flex items-center gap-3">
+        <div className="hidden md:flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-400 bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
-            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-            <span>LiveKit Cloud (WebRTC)</span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span>WebRTC Low-Latency</span>
           </div>
         </div>
 
         {/* Center Main Action Buttons */}
-        <div className="flex items-center gap-2 sm:gap-3 mx-auto sm:mx-0">
-          
+        <div className="flex items-center gap-1.5 sm:gap-2.5 mx-auto md:mx-0 overflow-x-auto py-1">
           {/* Microphone Toggle */}
           <button
             onClick={toggleMicrophone}
             title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
-            className={`p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+            className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
               isAudioMuted
                 ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
             }`}
           >
-            {isAudioMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5 text-emerald-400" />}
+            {isAudioMuted ? <MicOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <Mic className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />}
             <span className="hidden sm:inline">{isAudioMuted ? "Unmute" : "Mute"}</span>
           </button>
 
@@ -1383,13 +1547,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           <button
             onClick={toggleCamera}
             title={isVideoOn ? "Turn off camera" : "Turn on camera"}
-            className={`p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+            className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
               !isVideoOn
                 ? "bg-rose-600 hover:bg-rose-700 text-white shadow-lg shadow-rose-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
             }`}
           >
-            {isVideoOn ? <Video className="w-5 h-5 text-blue-400" /> : <VideoOff className="w-5 h-5" />}
+            {isVideoOn ? <Video className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" /> : <VideoOff className="w-4 h-4 sm:w-5 sm:h-5" />}
             <span className="hidden sm:inline">{isVideoOn ? "Stop Video" : "Start Video"}</span>
           </button>
 
@@ -1397,13 +1561,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           <button
             onClick={toggleScreenShare}
             title={isSharingScreen ? "Stop screen sharing" : "Share your screen"}
-            className={`p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+            className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
               isSharingScreen
                 ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
             }`}
           >
-            {isSharingScreen ? <MonitorOff className="w-5 h-5" /> : <MonitorUp className="w-5 h-5 text-teal-400" />}
+            {isSharingScreen ? <MonitorOff className="w-4 h-4 sm:w-5 sm:h-5" /> : <MonitorUp className="w-4 h-4 sm:w-5 sm:h-5 text-teal-400" />}
             <span className="hidden sm:inline">{isSharingScreen ? "Stop Share" : "Share Screen"}</span>
           </button>
 
@@ -1411,14 +1575,38 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           <button
             onClick={toggleWhiteboard}
             title="Interactive Whiteboard"
-            className={`p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+            className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
               isWhiteboardActive
                 ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
             }`}
           >
-            <Palette className="w-5 h-5 text-indigo-400" />
+            <Palette className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-400" />
             <span className="hidden sm:inline">Whiteboard</span>
+          </button>
+
+          {/* Data Saver Mode (Low-Bandwidth / Audio-First) */}
+          <button
+            onClick={toggleDataSaver}
+            title={isDataSaver ? "Disable Data Saver (Receive Video)" : "Enable Data Saver (Audio-First Mode for Slow Internet)"}
+            className={`p-2.5 sm:px-3 sm:py-3 rounded-2xl flex items-center gap-1.5 font-bold text-xs transition-all cursor-pointer ${
+              isDataSaver
+                ? "bg-emerald-600/90 hover:bg-emerald-600 text-white shadow-md shadow-emerald-600/20 border border-emerald-500/40 ring-2 ring-emerald-500/30"
+                : "bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80"
+            }`}
+          >
+            <Zap className={`w-4 h-4 sm:w-5 sm:h-5 ${isDataSaver ? "text-amber-300 fill-amber-300" : "text-slate-400"}`} />
+            <span className="hidden lg:inline">{isDataSaver ? "Data Saver: ON" : "Data Saver"}</span>
+          </button>
+
+          {/* Device Settings */}
+          <button
+            onClick={() => setShowSettingsModal(true)}
+            title="Media Device Settings"
+            className="p-2.5 sm:px-3 sm:py-3 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700/80 font-bold text-xs transition-all cursor-pointer"
+          >
+            <Settings className="w-4 h-4 sm:w-5 sm:h-5 text-slate-400" />
+            <span className="hidden xl:inline">Settings</span>
           </button>
 
           {/* Raise Hand (Student) */}
@@ -1426,13 +1614,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
             <button
               onClick={toggleHandRaise}
               title="Raise hand to ask question"
-              className={`p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+              className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
                 handRaised
                   ? "bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-lg shadow-amber-500/30 animate-bounce"
                   : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
               }`}
             >
-              <Hand className="w-5 h-5" />
+              <Hand className="w-4 h-4 sm:w-5 sm:h-5" />
               <span className="hidden sm:inline">{handRaised ? "Hand Raised" : "Raise Hand"}</span>
             </button>
           )}
@@ -1444,13 +1632,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
               setUnreadChatCount(0);
             }}
             title="Chat"
-            className={`relative p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+            className={`relative p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
               activeSideDrawer === "chat"
                 ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
             }`}
           >
-            <MessageSquare className="w-5 h-5 text-blue-400" />
+            <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
             <span className="hidden sm:inline">Chat</span>
             {unreadChatCount > 0 && (
               <span className="absolute -top-1 -right-1 w-5 h-5 bg-rose-500 text-white font-bold text-[10px] rounded-full flex items-center justify-center animate-bounce">
@@ -1463,13 +1651,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           <button
             onClick={() => setActiveSideDrawer((d) => (d === "participants" ? null : "participants"))}
             title="Participants"
-            className={`p-3 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
+            className={`p-2.5 sm:px-4 sm:py-3 rounded-2xl flex items-center gap-2 font-bold text-xs transition-all cursor-pointer ${
               activeSideDrawer === "participants"
                 ? "bg-teal-600 text-white shadow-lg shadow-teal-600/30"
                 : "bg-slate-800 hover:bg-slate-700 text-white border border-slate-700/80"
             }`}
           >
-            <Users className="w-5 h-5 text-teal-400" />
+            <Users className="w-4 h-4 sm:w-5 sm:h-5 text-teal-400" />
             <span className="hidden sm:inline">Users ({allParticipants.length})</span>
           </button>
         </div>
@@ -1479,22 +1667,102 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
           {isHost ? (
             <button
               onClick={() => setShowEndModal(true)}
-              className="px-4 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-all cursor-pointer"
+              className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-all cursor-pointer"
             >
               <PhoneOff className="w-4 h-4" />
-              <span>End Class</span>
+              <span className="hidden sm:inline">End Class</span>
             </button>
           ) : (
             <button
               onClick={handleLeaveClass}
-              className="px-4 py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-all cursor-pointer"
+              className="px-3.5 sm:px-4 py-2.5 sm:py-3 rounded-2xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-2 shadow-lg shadow-rose-600/30 transition-all cursor-pointer"
             >
               <PhoneOff className="w-4 h-4" />
-              <span>Leave Room</span>
+              <span className="hidden sm:inline">Leave Room</span>
             </button>
           )}
         </div>
       </footer>
+
+      {/* ── Device Settings Modal ── */}
+      {showSettingsModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <div className="flex items-center gap-2">
+                <Settings className="w-5 h-5 text-blue-400" />
+                <h3 className="text-sm font-bold text-white">Audio & Video Settings</h3>
+              </div>
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">Microphone</label>
+                <select
+                  value={selectedAudioDevice}
+                  onChange={(e) => handleDeviceChange("audioinput", e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">Default Microphone</option>
+                  {audioInputDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || `Microphone ${d.deviceId.slice(0, 5)}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-400 font-bold mb-1">Camera</label>
+                <select
+                  value={selectedVideoDevice}
+                  onChange={(e) => handleDeviceChange("videoinput", e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">Default Camera</option>
+                  {videoInputDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || `Camera ${d.deviceId.slice(0, 5)}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="pt-2 border-t border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-bold text-white">Low-Bandwidth Mode</p>
+                    <p className="text-[11px] text-slate-400">Prioritizes audio stability over incoming video</p>
+                  </div>
+                  <button
+                    onClick={toggleDataSaver}
+                    className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer ${
+                      isDataSaver ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400"
+                    }`}
+                  >
+                    {isDataSaver ? "Enabled" : "Disabled"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setShowSettingsModal(false)}
+                className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition-colors cursor-pointer"
+              >
+                Save & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── End Class Confirmation Modal (Teacher) ── */}
       {showEndModal && (
@@ -1514,13 +1782,13 @@ export default function LiveKitClassroomContainer({ classId }: LiveKitClassroomP
             <div className="flex gap-3 pt-2">
               <button
                 onClick={() => setShowEndModal(false)}
-                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors"
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold text-xs transition-colors cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleEndClassForEveryone}
-                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-lg shadow-rose-600/30 transition-all"
+                className="flex-1 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-lg shadow-rose-600/30 transition-all cursor-pointer"
               >
                 Yes, End Class
               </button>

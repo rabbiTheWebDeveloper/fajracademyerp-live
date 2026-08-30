@@ -82,7 +82,7 @@ export default function TeacherOnlineClassDetailPage({ params }: { params: Promi
         <AlertCircle className="w-12 h-12 text-rose-500 mb-3" />
         <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Online Class Not Found</h2>
         <Link
-          href="/teacher/online-classes"
+          href="/teacher/online-classes-liveKit"
           className="mt-4 px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold"
         >
           Back to Online Classes
