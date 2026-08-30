@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  output: 'standalone',
+  ...(process.env.BUILD_STANDALONE === 'true' ? { output: 'standalone' as const } : {}),
   transpilePackages: ['motion'],
   turbopack: {},
   webpack: (config, {dev}) => {
