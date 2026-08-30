@@ -176,18 +176,24 @@ export default function TeacherOnlineClassesPage() {
     }
   };
 
-  const handleCancel = async (id: string) => {
-    if (!confirm("Are you sure you want to cancel this online class?")) return;
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleCancel = async (id: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm("Are you sure you want to delete this online class? This will cancel and remove the session.")) return;
+    setDeletingId(id);
     try {
       const res = await fetch(`/api/online-classes/${id}`, { method: "DELETE" });
       const data = await res.json();
       if (data.success) {
         fetchOnlineClasses();
       } else {
-        alert(data.message || "Failed to cancel class");
+        alert(data.message || "Failed to delete class");
       }
     } catch (err: any) {
       alert(err.message || "An error occurred");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -488,38 +494,55 @@ export default function TeacherOnlineClassesPage() {
                   </div>
                 </div>
 
-                {status === "completed" && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-lg text-[11px] font-bold flex-shrink-0">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Completed
-                  </span>
-                )}
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  {status === "completed" && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60 rounded-lg text-[11px] font-bold">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Completed
+                    </span>
+                  )}
 
-                {status === "in-progress" && todayClass && (
-                  <Link
-                    href={`/online-classes/${todayClass._id}/room`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex-shrink-0 animate-pulse"
-                  >
-                    <PlayCircle className="w-3.5 h-3.5" /> Live Now
-                  </Link>
-                )}
+                  {status === "in-progress" && todayClass && (
+                    <Link
+                      href={`/online-classes/${todayClass._id}/room`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs animate-pulse"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5" /> Live Now
+                    </Link>
+                  )}
 
-                {status === "scheduled" && todayClass && (
-                  <Link
-                    href={`/online-classes/${todayClass._id}/room`}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex-shrink-0"
-                  >
-                    <PlayCircle className="w-3.5 h-3.5" /> Start
-                  </Link>
-                )}
+                  {status === "scheduled" && todayClass && (
+                    <Link
+                      href={`/online-classes/${todayClass._id}/room`}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5" /> Start
+                    </Link>
+                  )}
 
-                {status === "uncreated" && (
-                  <button
-                    onClick={() => handleQuickCreateForStudent(st)}
-                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs flex-shrink-0 active:scale-95 cursor-pointer"
-                  >
-                    + Create
-                  </button>
-                )}
+                  {status === "uncreated" && (
+                    <button
+                      onClick={() => handleQuickCreateForStudent(st)}
+                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-xs active:scale-95 cursor-pointer"
+                    >
+                      + Create
+                    </button>
+                  )}
+
+                  {todayClass && (
+                    <button
+                      onClick={(e) => handleCancel(todayClass._id, e)}
+                      disabled={deletingId === todayClass._id}
+                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer"
+                      title="Delete Class"
+                    >
+                      {deletingId === todayClass._id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-500" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -646,15 +669,18 @@ export default function TeacherOnlineClassesPage() {
                       Attendance Logs
                     </Link>
 
-                    {cls.status === "scheduled" && (
-                      <button
-                        onClick={() => handleCancel(cls._id)}
-                        className="p-2 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors"
-                        title="Cancel Class"
-                      >
+                    <button
+                      onClick={() => handleCancel(cls._id)}
+                      disabled={deletingId === cls._id}
+                      className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors cursor-pointer"
+                      title="Delete Online Class"
+                    >
+                      {deletingId === cls._id ? (
+                        <Loader2 className="w-4 h-4 animate-spin text-rose-500" />
+                      ) : (
                         <Trash2 className="w-4 h-4" />
-                      </button>
-                    )}
+                      )}
+                    </button>
                   </div>
 
                   {!isCompleted ? (

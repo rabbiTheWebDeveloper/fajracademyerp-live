@@ -23,6 +23,7 @@ import {
   ExternalLink,
   ShieldCheck,
   Sparkles,
+  Trash2,
 } from "lucide-react";
 
 export default function TeacherOnlineClassDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,7 +33,26 @@ export default function TeacherOnlineClassDetailPage({ params }: { params: Promi
   const [classData, setClassData] = useState<any>(null);
   const [attendance, setAttendance] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [deleting, setDeleting] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const handleDeleteClass = async () => {
+    if (!confirm("Are you sure you want to delete this online class? This will cancel and permanently remove the session.")) return;
+    setDeleting(true);
+    try {
+      const res = await fetch(`/api/online-classes/${id}?permanent=true`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        router.push("/teacher/online-classes-liveKit");
+      } else {
+        alert(data.message || "Failed to delete class");
+      }
+    } catch (err: any) {
+      alert(err.message || "An error occurred");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     const fetchDetails = async () => {
@@ -112,6 +132,15 @@ export default function TeacherOnlineClassDetailPage({ params }: { params: Promi
           >
             <Copy className="w-3.5 h-3.5" />
             {copied ? "Copied Link!" : "Copy Classroom Link"}
+          </button>
+
+          <button
+            onClick={handleDeleteClass}
+            disabled={deleting}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 text-xs font-medium hover:bg-rose-100 dark:hover:bg-rose-900/60 transition-colors cursor-pointer"
+          >
+            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+            {deleting ? "Deleting..." : "Delete Class"}
           </button>
         </div>
       </div>

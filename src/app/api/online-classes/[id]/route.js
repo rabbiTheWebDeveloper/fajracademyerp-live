@@ -181,12 +181,19 @@ export async function DELETE(request, { params }) {
       );
     }
 
-    onlineClass.status = "cancelled";
-    onlineClass.isActive = false;
-    await onlineClass.save();
+    const { searchParams } = new URL(request.url);
+    const permanent = searchParams.get("permanent") === "true";
+
+    if (permanent) {
+      await OnlineClassModel.findByIdAndDelete(id);
+    } else {
+      onlineClass.status = "cancelled";
+      onlineClass.isActive = false;
+      await onlineClass.save();
+    }
 
     return NextResponse.json(
-      { success: true, message: "Online class cancelled successfully" },
+      { success: true, message: "Online class deleted successfully" },
       { status: 200, headers: NO_CACHE }
     );
   } catch (error) {
