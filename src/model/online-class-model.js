@@ -51,7 +51,20 @@ const onlineClassSchema = new Schema(
       default: null,
       index: true,
     },
-    // Zoom session identifier (topic/channel name used for Zoom Video SDK join)
+    // Video meeting platform: livekit | google-meet | zoom
+    platform: {
+      type: String,
+      enum: ["livekit", "google-meet", "zoom"],
+      default: "livekit",
+      index: true,
+    },
+    // Direct meeting link (for Google Meet or external rooms)
+    meetLink: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    // Zoom/LiveKit session identifier (topic/channel name used for Video SDK join)
     sessionName: {
       type: String,
       required: true,

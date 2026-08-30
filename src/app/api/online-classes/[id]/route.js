@@ -118,6 +118,9 @@ export async function PATCH(request, { params }) {
       "notes",
       "student",
       "course",
+      "platform",
+      "meetLink",
+      "status",
     ];
 
     allowedUpdates.forEach((key) => {

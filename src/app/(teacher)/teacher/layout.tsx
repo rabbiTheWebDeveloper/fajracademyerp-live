@@ -36,6 +36,7 @@ import { clearTeacherCache } from "./apiFetch";
 
 const sidebarNavigation = [
   { name: "Dashboard",          href: "/teacher",                       icon: BarChart2 },
+  { name: "Google Meet Classes", href: "/teacher/online-classes-google-meet", icon: Video },
   { name: "LiveKit Classes",    href: "/teacher/online-classes-liveKit",icon: Radio },
   // { name: "Online Classes",     href: "/teacher/online-classes",        icon: Video },
   { name: "My Classes",         href: "/teacher/class",                 icon: Calendar },

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { dbConnect } from "@/service/mongo";
 import { getAuthUser } from "@/lib/auth-server";
 import { OnlineClassModel } from "@/model/online-class-model";
+import { createGoogleMeetLink } from "@/lib/google-calendar";
 import "@/model/teacher-model";
 import "@/model/student-model";
 import "@/model/course-model";
@@ -31,6 +32,7 @@ export async function GET(request) {
     const status = searchParams.get("status");
     const date = searchParams.get("date");
     const search = searchParams.get("search");
+    const platform = searchParams.get("platform");
 
     const query = { isActive: true };
 
@@ -47,6 +49,16 @@ export async function GET(request) {
       );
     }
 
+    if (platform && platform !== "all") {
+      if (platform === "google-meet") {
+        query.$or = [{ platform: "google-meet" }, { meetLink: { $exists: true, $ne: "" } }];
+      } else if (platform === "livekit") {
+        query.platform = { $in: ["livekit", null, undefined] };
+      } else {
+        query.platform = platform;
+      }
+    }
+
     if (status && status !== "all") {
       query.status = status;
     }
@@ -59,11 +71,17 @@ export async function GET(request) {
     }
 
     if (search) {
-      query.$or = [
+      const searchOr = [
         { title: { $regex: search, $options: "i" } },
         { topic: { $regex: search, $options: "i" } },
         { subject: { $regex: search, $options: "i" } },
       ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchOr }];
+        delete query.$or;
+      } else {
+        query.$or = searchOr;
+      }
     }
 
     const classes = await OnlineClassModel.find(query)
@@ -127,6 +145,8 @@ export async function POST(request) {
       scheduledEndTime,
       duration = 45,
       notes = "",
+      platform = "livekit",
+      meetLink = "",
     } = body;
 
     if (!title) {
@@ -149,9 +169,25 @@ export async function POST(request) {
       );
     }
 
-    // Auto-generate a secure, unique Zoom session identifier
+    // Auto-generate a secure, unique session identifier
     const randomSuffix = Math.random().toString(36).substring(2, 8);
-    const sessionName = `fajr_online_${Date.now()}_${randomSuffix}`;
+    const sessionName = `fajr_${platform === "google-meet" ? "meet" : "online"}_${Date.now()}_${randomSuffix}`;
+
+    // Handle Google Meet link generation if platform is google-meet and meetLink is empty
+    let finalMeetLink = meetLink ? meetLink.trim() : "";
+    if (platform === "google-meet" && !finalMeetLink) {
+      try {
+        finalMeetLink = await createGoogleMeetLink(
+          title,
+          scheduledStartTime || "10:00",
+          scheduledEndTime || "10:45",
+          scheduledDate || new Date()
+        );
+      } catch (meetErr) {
+        console.warn("[POST /api/online-classes] Error generating meet link:", meetErr);
+        finalMeetLink = "";
+      }
+    }
 
     const newClass = await OnlineClassModel.create({
       title,
@@ -160,6 +196,8 @@ export async function POST(request) {
       teacher: finalTeacherId,
       student: studentId || null,
       course: courseId || null,
+      platform,
+      meetLink: finalMeetLink,
       sessionName,
       scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(),
       scheduledStartTime: scheduledStartTime || "10:00",

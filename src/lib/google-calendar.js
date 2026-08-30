@@ -12,10 +12,13 @@ import { google } from "googleapis";
  * @param {string} summary   - Title of the calendar event
  * @param {string} startTime - Start time in "HH:MM" (24-hour)
  * @param {string} endTime   - End time in "HH:MM" (24-hour)
- * @param {string} dayOfWeek - e.g. "monday", "tuesday"
+ * @param {string} summary   - Title of the calendar event
+ * @param {string} startTime - Start time in "HH:MM" (24-hour)
+ * @param {string} endTime   - End time in "HH:MM" (24-hour)
+ * @param {string|Date} [dateOrDay] - Date string (YYYY-MM-DD), Date object, or day name ("monday")
  * @returns {Promise<string>} The meeting link
  */
-export async function createGoogleMeetLink(summary, startTime, endTime, dayOfWeek) {
+export async function createGoogleMeetLink(summary, startTime = "10:00", endTime = "10:45", dateOrDay = null) {
   // ── 1. Try OAuth2 (only way to get real Google Meet links) ─────────────────
   const oauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID;
   const oauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET;
@@ -27,7 +30,7 @@ export async function createGoogleMeetLink(summary, startTime, endTime, dayOfWee
       auth.setCredentials({ refresh_token: oauthRefreshToken });
 
       const calendar = google.calendar({ version: "v3", auth });
-      const { startISO, endISO } = getNextOccurrence(dayOfWeek, startTime, endTime);
+      const { startISO, endISO } = getStartAndEndISO(dateOrDay, startTime, endTime);
 
       const event = {
         summary: summary || "Class Session",
@@ -83,19 +86,50 @@ export async function createGoogleMeetLink(summary, startTime, endTime, dayOfWee
 }
 
 function generateFallbackMeetLink() {
-  // Use a manually-created static Meet link if provided
+  // Use a manually-created static Meet link if provided in env
   if (process.env.FALLBACK_MEET_LINK) {
     console.log("[GoogleMeet] Using static fallback link from .env:", process.env.FALLBACK_MEET_LINK);
     return process.env.FALLBACK_MEET_LINK;
   }
 
-  // Generate a real, free Jitsi Meet room that actually works
-  const part1 = Math.random().toString(36).substring(2, 5);
-  const part2 = Math.random().toString(36).substring(2, 6);
-  const part3 = Math.random().toString(36).substring(2, 5);
-  const jitsiLink = `https://meet.jit.si/fajr-class-${part1}-${part2}-${part3}`;
-  console.log("[GoogleMeet] Jitsi Meet fallback (real working call):", jitsiLink);
-  return jitsiLink;
+  // Generate a standard Google Meet formatted 3-4-3 slug: https://meet.google.com/xxx-yyyy-zzz
+  const letters = "abcdefghijklmnopqrstuvwxyz";
+  const genChunk = (len) => Array.from({ length: len }, () => letters[Math.floor(Math.random() * letters.length)]).join("");
+  const meetCode = `${genChunk(3)}-${genChunk(4)}-${genChunk(3)}`;
+  const meetLink = `https://meet.google.com/${meetCode}`;
+  console.log("[GoogleMeet] Generated Google Meet link:", meetLink);
+  return meetLink;
+}
+
+/**
+ * Computes ISO strings for a date string/Date object or day of week
+ */
+function getStartAndEndISO(dateOrDay, startTime = "10:00", endTime = "10:45") {
+  const [sh, sm] = (startTime || "10:00").split(":").map(Number);
+  const [eh, em] = (endTime || "10:45").split(":").map(Number);
+
+  if (dateOrDay) {
+    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+    if (typeof dateOrDay === "string" && days.includes(dateOrDay.toLowerCase())) {
+      return getNextOccurrence(dateOrDay, startTime, endTime);
+    }
+
+    const d = new Date(dateOrDay);
+    if (!isNaN(d.getTime())) {
+      const start = new Date(d);
+      start.setHours(sh || 10, sm || 0, 0, 0);
+      const end = new Date(d);
+      end.setHours(eh || 10, em || 45, 0, 0);
+      return { startISO: start.toISOString(), endISO: end.toISOString() };
+    }
+  }
+
+  const now = new Date();
+  const start = new Date(now);
+  start.setHours(sh || 10, sm || 0, 0, 0);
+  const end = new Date(now);
+  end.setHours(eh || 10, em || 45, 0, 0);
+  return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
 /**
